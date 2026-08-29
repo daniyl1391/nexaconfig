@@ -1,31 +1,74 @@
-name: Discover and Build V2rayNG Base v3
+name: Discover and Build V2rayNG Base v4
 
 on:
   workflow_dispatch:
 
 jobs:
-  discover:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Clone v2rayNG upstream (with submodules)
         run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/2dust/v2rayNG.git
 
-      - name: Check current libs folder content
-        run: |
-          echo "--- app/libs contents ---"
-          ls -la v2rayNG/V2rayNG/app/libs 2>&1 || echo "libs folder does not exist"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Check AndroidLibXrayLite build instructions
+      - name: Install NDK
         run: |
-          echo "--- README ---"
-          cat v2rayNG/AndroidLibXrayLite/README.md 2>&1 | head -80
-          echo "--- Makefile/build scripts ---"
-          find v2rayNG/AndroidLibXrayLite -maxdepth 1 -iname "Makefile" -o -iname "*.sh" -o -iname "*.yml"
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;29.0.14206865" || \
+          echo "y" | sdkmanager --install "ndk;29.0.14206865"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
 
-      - name: Check for prebuilt AAR releases (AndroidLibXrayLite)
+      - name: Add ndkVersion to build.gradle.kts
         run: |
-          curl -s https://api.github.com/repos/2dust/AndroidLibXrayLite/releases/latest | grep -E '"tag_name"|"name"|"browser_download_url"'
+          sed -i '/^android {/a\    ndkVersion = "29.0.14206865"' v2rayNG/V2rayNG/app/build.gradle.kts
+          head -15 v2rayNG/V2rayNG/app/build.gradle.kts
 
-      - name: Check v2rayNG's own CI workflow for build steps
+      - name: Build libhevtun
+        working-directory: v2rayNG
         run: |
-          find v2rayNG/.github/workflows -type f -name "*.yml" -exec echo "--- {} ---" \; -exec cat {} \;
+          ls -la
+          cat compile-hevtun.sh | head -20
+          bash compile-hevtun.sh
+
+      - name: Copy libhevtun into app
+        run: |
+          cp -r v2rayNG/libs v2rayNG/V2rayNG/app/ 2>&1 || echo "libs copy failed, checking structure"
+          find v2rayNG -maxdepth 2 -iname "libs" -type d
+
+      - name: Fetch AndroidLibXrayLite tag and download prebuilt AAR
+        run: |
+          cd v2rayNG/AndroidLibXrayLite
+          CURRENT_TAG=$(git describe --tags --abbrev=0)
+          echo "Tag: $CURRENT_TAG"
+          cd ../..
+          mkdir -p v2rayNG/V2rayNG/app/libs
+          curl -L -o v2rayNG/V2rayNG/app/libs/libv2ray.aar \
+            "https://github.com/2dust/AndroidLibXrayLite/releases/download/${CURRENT_TAG}/libv2ray.aar"
+          ls -la v2rayNG/V2rayNG/app/libs/
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generate gradle wrapper
+        working-directory: v2rayNG/V2rayNG
+        run: gradle wrapper --gradle-version 9.5
+
+      - name: Try baseline build
+        working-directory: v2rayNG/V2rayNG
+        continue-on-error: true
+        run: |
+          chmod +x gradlew
+          ./gradlew assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --no-daemon 2>&1 | tail -150
+
+      - name: Upload baseline APK if built
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: baseline-apk-v4
+          path: |
+            v2rayNG/V2rayNG/app/build/outputs/apk/**/*.apk
+          if-no-files-found: ignore
