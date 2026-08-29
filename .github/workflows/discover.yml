@@ -1,4 +1,4 @@
-name: Discover and Build V2rayNG Base
+name: Discover and Build V2rayNG Base v2
 
 on:
   workflow_dispatch:
@@ -7,32 +7,25 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone v2rayNG upstream
-        run: git clone --depth 1 https://github.com/2dust/v2rayNG.git
+      - name: Clone v2rayNG upstream (with submodules)
+        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/2dust/v2rayNG.git
 
-      - name: List project structure (2 levels)
-        run: find v2rayNG -maxdepth 3 -type d | sort
+      - name: Verify submodules populated
+        run: |
+          echo "--- AndroidLibXrayLite ---"
+          ls -la v2rayNG/AndroidLibXrayLite | head -20
+          echo "--- hev-socks5-tunnel ---"
+          ls -la v2rayNG/hev-socks5-tunnel | head -20
 
-      - name: Show app build.gradle
-        run: find v2rayNG -name "build.gradle*" -path "*app*" -exec cat {} \;
+      - name: Search for theme/color definitions
+        run: |
+          find v2rayNG -name "themes.xml" -exec echo "--- {} ---" \; -exec cat {} \;
 
-      - name: Show AndroidManifest
-        run: find v2rayNG -name "AndroidManifest.xml" -exec echo "--- {} ---" \; -exec cat {} \;
+      - name: Search for hardcoded color values
+        run: grep -rn "#[0-9A-Fa-f]\{6\}" v2rayNG/V2rayNG/app/src/main/res --include="*.xml" | head -40
 
-      - name: Search for app name references
-        run: grep -rn "v2rayNG\|V2RayNG\|app_name" v2rayNG --include="*.xml" --include="*.kt" -l | head -30
-
-      - name: Show strings.xml (main)
-        run: find v2rayNG -name "strings.xml" -path "*values/*" -not -path "*values-*" -exec echo "--- {} ---" \; -exec cat {} \;
-
-      - name: Show colors.xml
-        run: find v2rayNG -name "colors.xml" -exec echo "--- {} ---" \; -exec cat {} \;
-
-      - name: List launcher icon resources
-        run: find v2rayNG -iname "*ic_launcher*" -o -iname "*ic_logo*" | head -40
-
-      - name: Find About / Settings screens
-        run: grep -rln "About\|Github\|github.com/2dust" v2rayNG --include="*.kt" | head -20
+      - name: Search for github links in Kotlin UI files
+        run: grep -n "github.com/2dust\|t.me/\|Telegram" v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/AboutActivity.kt v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/AppConfig.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -43,18 +36,22 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Try baseline build (unmodified)
-        working-directory: v2rayNG
+      - name: Generate gradle wrapper
+        working-directory: v2rayNG/V2rayNG
+        run: gradle wrapper --gradle-version 8.9
+
+      - name: Try baseline build (single ABI, playstore flavor only, for speed)
+        working-directory: v2rayNG/V2rayNG
         continue-on-error: true
         run: |
-          chmod +x gradlew || true
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -100
+          chmod +x gradlew
+          ./gradlew assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --no-daemon 2>&1 | tail -150
 
       - name: Upload baseline APK if built
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: baseline-apk-and-logs
+          name: baseline-apk-v2
           path: |
-            v2rayNG/app/build/outputs/apk/**/*.apk
+            v2rayNG/V2rayNG/app/build/outputs/apk/**/*.apk
           if-no-files-found: ignore
