@@ -38,7 +38,7 @@ jobs:
 
       - name: Generate gradle wrapper
         working-directory: v2rayNG/V2rayNG
-        run: gradle wrapper --gradle-version 8.9
+        run: gradle wrapper --gradle-version 9.5
 
       - name: Try baseline build (single ABI, playstore flavor only, for speed)
         working-directory: v2rayNG/V2rayNG
