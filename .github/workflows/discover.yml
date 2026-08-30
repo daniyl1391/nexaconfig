@@ -19,4 +19,3 @@ jobs:
       - name: Show fdroid launcher icon (might differ)
         run: |
           find v2rayNG/V2rayNG/app/src/fdroid -iname "*ic_launcher*" 2>&1 || echo "none"
-EOF
