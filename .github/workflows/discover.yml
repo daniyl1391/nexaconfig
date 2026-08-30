@@ -1,4 +1,4 @@
-name: Discover UI and Theme Files v5
+name: Discover Theme File v6
 
 on:
   workflow_dispatch:
@@ -7,33 +7,16 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone v2rayNG upstream (shallow, no submodules needed for this)
+      - name: Clone v2rayNG upstream (shallow)
         run: git clone --depth 1 https://github.com/2dust/v2rayNG.git
 
-      - name: Find all theme/color related Kotlin files
+      - name: Show Theme.kt full content
+        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/compose/Theme.kt
+
+      - name: Show ic_launcher_background color value
+        run: cat v2rayNG/V2rayNG/app/src/main/res/values/ic_launcher_background.xml
+
+      - name: Show fdroid launcher icon (might differ)
         run: |
-          find v2rayNG/V2rayNG/app/src/main/java -path "*theme*" -o -path "*Theme*" -o -iname "*Color*.kt"
-
-      - name: Show theme Kotlin files content
-        run: |
-          for f in $(find v2rayNG/V2rayNG/app/src/main/java -path "*theme*" -iname "*.kt"); do
-            echo "=== $f ==="
-            cat "$f"
-            echo ""
-          done
-
-      - name: Show AboutActivity.kt
-        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/AboutActivity.kt
-
-      - name: Show MainDrawer.kt
-        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/main/MainDrawer.kt
-
-      - name: Show adaptive icon XML and check if foreground is vector
-        run: |
-          cat v2rayNG/V2rayNG/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          echo "---"
-          find v2rayNG/V2rayNG/app/src/main/res -iname "ic_launcher_foreground*"
-          file v2rayNG/V2rayNG/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png 2>&1 || true
-
-      - name: Show AppConfig.kt (constants, likely has default URLs)
-        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/AppConfig.kt
+          find v2rayNG/V2rayNG/app/src/fdroid -iname "*ic_launcher*" 2>&1 || echo "none"
+EOF
