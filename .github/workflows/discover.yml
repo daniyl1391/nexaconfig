@@ -1,74 +1,39 @@
-name: Discover and Build V2rayNG Base v4
+name: Discover UI and Theme Files v5
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  discover:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone v2rayNG upstream (with submodules)
-        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/2dust/v2rayNG.git
+      - name: Clone v2rayNG upstream (shallow, no submodules needed for this)
+        run: git clone --depth 1 https://github.com/2dust/v2rayNG.git
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK
+      - name: Find all theme/color related Kotlin files
         run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;29.0.14206865" || \
-          echo "y" | sdkmanager --install "ndk;29.0.14206865"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+          find v2rayNG/V2rayNG/app/src/main/java -path "*theme*" -o -path "*Theme*" -o -iname "*Color*.kt"
 
-      - name: Add ndkVersion to build.gradle.kts
+      - name: Show theme Kotlin files content
         run: |
-          sed -i '/^android {/a\    ndkVersion = "29.0.14206865"' v2rayNG/V2rayNG/app/build.gradle.kts
-          head -15 v2rayNG/V2rayNG/app/build.gradle.kts
+          for f in $(find v2rayNG/V2rayNG/app/src/main/java -path "*theme*" -iname "*.kt"); do
+            echo "=== $f ==="
+            cat "$f"
+            echo ""
+          done
 
-      - name: Build libhevtun
-        working-directory: v2rayNG
+      - name: Show AboutActivity.kt
+        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/AboutActivity.kt
+
+      - name: Show MainDrawer.kt
+        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/main/MainDrawer.kt
+
+      - name: Show adaptive icon XML and check if foreground is vector
         run: |
-          ls -la
-          cat compile-hevtun.sh | head -20
-          bash compile-hevtun.sh
+          cat v2rayNG/V2rayNG/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          echo "---"
+          find v2rayNG/V2rayNG/app/src/main/res -iname "ic_launcher_foreground*"
+          file v2rayNG/V2rayNG/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png 2>&1 || true
 
-      - name: Copy libhevtun into app
-        run: |
-          cp -r v2rayNG/libs v2rayNG/V2rayNG/app/ 2>&1 || echo "libs copy failed, checking structure"
-          find v2rayNG -maxdepth 2 -iname "libs" -type d
-
-      - name: Fetch AndroidLibXrayLite tag and download prebuilt AAR
-        run: |
-          cd v2rayNG/AndroidLibXrayLite
-          CURRENT_TAG=$(git describe --tags --abbrev=0)
-          echo "Tag: $CURRENT_TAG"
-          cd ../..
-          mkdir -p v2rayNG/V2rayNG/app/libs
-          curl -L -o v2rayNG/V2rayNG/app/libs/libv2ray.aar \
-            "https://github.com/2dust/AndroidLibXrayLite/releases/download/${CURRENT_TAG}/libv2ray.aar"
-          ls -la v2rayNG/V2rayNG/app/libs/
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Generate gradle wrapper
-        working-directory: v2rayNG/V2rayNG
-        run: gradle wrapper --gradle-version 9.5
-
-      - name: Try baseline build
-        working-directory: v2rayNG/V2rayNG
-        continue-on-error: true
-        run: |
-          chmod +x gradlew
-          ./gradlew assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --no-daemon 2>&1 | tail -150
-
-      - name: Upload baseline APK if built
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: baseline-apk-v4
-          path: |
-            v2rayNG/V2rayNG/app/build/outputs/apk/**/*.apk
-          if-no-files-found: ignore
+      - name: Show AppConfig.kt (constants, likely has default URLs)
+        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/AppConfig.kt
