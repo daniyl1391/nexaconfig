@@ -1,21 +1,195 @@
-name: Discover Theme File v6
+name: Build NexaConfig Branded APK
 
 on:
   workflow_dispatch:
 
 jobs:
-  discover:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone v2rayNG upstream (shallow)
-        run: git clone --depth 1 https://github.com/2dust/v2rayNG.git
+      - name: Checkout this repo (to get the logo file)
+        uses: actions/checkout@v4
 
-      - name: Show Theme.kt full content
-        run: cat v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/compose/Theme.kt
+      - name: Clone v2rayNG upstream (with submodules)
+        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/2dust/v2rayNG.git
 
-      - name: Show ic_launcher_background color value
-        run: cat v2rayNG/V2rayNG/app/src/main/res/values/ic_launcher_background.xml
-
-      - name: Show fdroid launcher icon (might differ)
+      - name: Patch app name everywhere
         run: |
-          find v2rayNG/V2rayNG/app/src/fdroid -iname "*ic_launcher*" 2>&1 || echo "none"
+          find v2rayNG/V2rayNG/app/src -name "strings.xml" -exec sed -i 's/v2rayNG/NexaConfig/g; s/V2rayNG/NexaConfig/g' {} \;
+
+      - name: Patch AppConfig.kt links (telegram bot + channel, remove upstream links)
+        working-directory: v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang
+        run: |
+          sed -i \
+            -e 's#const val APP_URL = "\$GITHUB_URL/2dust/v2rayNG"#const val APP_URL = "https://t.me/NEXA_CONFIG_MASTER"#' \
+            -e 's#const val APP_ISSUES_URL = "\$APP_URL/issues"#const val APP_ISSUES_URL = "https://t.me/NEXA_CONFIG_MASTERBOT"#' \
+            -e 's#const val APP_PRIVACY_POLICY = "\$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"#const val APP_PRIVACY_POLICY = "https://t.me/NEXA_CONFIG_MASTER"#' \
+            -e 's#const val TG_CHANNEL_URL = "https://t.me/github_2dust"#const val TG_CHANNEL_URL = "https://t.me/NEXA_CONFIG_MASTER"#' \
+            AppConfig.kt
+
+      - name: Patch Theme.kt with neon black color scheme
+        working-directory: v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/compose
+        run: |
+          python3 << 'PYEOF2'
+          with open("Theme.kt", "r") as f:
+              content = f.read()
+
+          neon_green = "0xFF39FF14"
+          neon_cyan = "0xFF00E5FF"
+          near_black = "0xFF07090A"
+          deep_black = "0xFF000000"
+          surface_black = "0xFF101214"
+
+          content = content.replace(
+              'primary = Color(0xFF000000), // Black\n    onPrimary = Color(0xFFFFFFFF), // White',
+              f'primary = Color({neon_green}), // Neon Green\n    onPrimary = Color({deep_black}), // Black'
+          )
+          content = content.replace(
+              'primary = Color(0xFFC0C0C0), // Silver Gray\n    onPrimary = Color(0xFF303030), // Dark Gray',
+              f'primary = Color({neon_green}), // Neon Green\n    onPrimary = Color({deep_black}), // Black'
+          )
+          content = content.replace('secondary = Color(0xFFf97910), // Orange', f'secondary = Color({neon_cyan}), // Neon Cyan')
+          content = content.replace('background = Color(0xFFFFFFFF), // White', f'background = Color({near_black}), // Near Black (Neon Theme)')
+          content = content.replace('surface = Color(0xFFFFFFFF), // White', f'surface = Color({surface_black}), // Near Black (Neon Theme)')
+          content = content.replace('onBackground = Color(0xFF1C1B1F), // Near Black', 'onBackground = Color(0xFFE6E1E5), // Light Gray')
+          content = content.replace('onSurface = Color(0xFF1C1B1F), // Near Black', 'onSurface = Color(0xFFE6E1E5), // Light Gray')
+          content = content.replace('background = Color(0xFF1C1B1F), // Near Black', f'background = Color({near_black}), // Near Black (Neon Theme)')
+          content = content.replace('surface = Color(0xFF1C1B1F), // Near Black', f'surface = Color({surface_black}), // Near Black (Neon Theme)')
+
+          content = content.replace(
+              'MmkvManager.decodeSettingsBool(AppConfig.PREF_DYNAMIC_COLOR, true)',
+              'MmkvManager.decodeSettingsBool(AppConfig.PREF_DYNAMIC_COLOR, false)'
+          )
+
+          content = content.replace(
+              'return when (mode) {\n        "1" -> false\n        "2" -> true\n        else -> isSystemInDarkTheme()\n    }',
+              'return when (mode) {\n        "1" -> false\n        else -> true\n    }'
+          )
+
+          with open("Theme.kt", "w") as f:
+              f.write(content)
+          print("Theme.kt patched")
+          PYEOF2
+
+      - name: Remove white-tint on logo in drawer header (keep our logo colorful)
+        working-directory: v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/main
+        run: |
+          python3 << 'PYEOF3'
+          with open("MainDrawer.kt", "r") as f:
+              content = f.read()
+          old = '''colorFilter = if (isDarkTheme) {
+                            ColorFilter.tint(Color.White, BlendMode.SrcIn)
+                        } else {
+                            null
+                        }'''
+          new = "colorFilter = null"
+          content = content.replace(old, new)
+
+          content = content.replace(
+              "private val drawerItems = primaryDrawerItems + listOf(\n    MainDestination.Promotion,\n    MainDestination.Logcat,",
+              "private val drawerItems = primaryDrawerItems + listOf(\n    MainDestination.Logcat,"
+          )
+
+          with open("MainDrawer.kt", "w") as f:
+              f.write(content)
+          print("MainDrawer.kt patched")
+          PYEOF3
+
+      - name: Extend neon colors to connection status and FAB accents
+        working-directory: v2rayNG/V2rayNG/app/src/main/java/com/v2ray/ang/ui/compose
+        run: |
+          python3 << 'PYEOF4'
+          with open("Theme.kt", "r") as f:
+              content = f.read()
+
+          replacements = {
+              'val colorPing = Color(0xFF009966) // Green': 'val colorPing = Color(0xFF39FF14) // Neon Green (Theme)',
+              'val colorPingRed = Color(0xFFFF0099) // Pink Red': 'val colorPingRed = Color(0xFFFF3B5C) // Neon Red (Theme)',
+              'val colorConfigType = Color(0xFFf97910) // Orange': 'val colorConfigType = Color(0xFF00E5FF) // Neon Cyan (Theme)',
+              'val colorFabActive = Color(0xFFf97910) // Orange': 'val colorFabActive = Color(0xFF39FF14) // Neon Green (Theme)',
+          }
+          for old, new in replacements.items():
+              content = content.replace(old, new)
+
+          with open("Theme.kt", "w") as f:
+              f.write(content)
+          print("Accent colors extended")
+          PYEOF4
+
+      - name: Check for custom logo and generate all launcher icons
+        run: |
+          if [ -f "branding/logo.png" ]; then
+            echo "Logo found, generating icons..."
+            DEST=v2rayNG/V2rayNG/app/src/main/res
+
+            declare -A LEGACY_SIZES=( [mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192 )
+            declare -A FG_SIZES=( [mdpi]=108 [hdpi]=162 [xhdpi]=216 [xxhdpi]=324 [xxxhdpi]=432 )
+
+            for dpi in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              mkdir -p "$DEST/mipmap-$dpi"
+              convert branding/logo.png -resize ${LEGACY_SIZES[$dpi]}x${LEGACY_SIZES[$dpi]} "$DEST/mipmap-$dpi/ic_launcher.png"
+              convert branding/logo.png -resize ${LEGACY_SIZES[$dpi]}x${LEGACY_SIZES[$dpi]} "$DEST/mipmap-$dpi/ic_launcher_round.png"
+              convert branding/logo.png -resize ${FG_SIZES[$dpi]}x${FG_SIZES[$dpi]} "$DEST/mipmap-$dpi/ic_launcher_foreground.png"
+            done
+
+            convert branding/logo.png -resize 512x512 "$DEST/../ic_launcher-web.png" 2>/dev/null || true
+
+            sed -i 's/#FFFFFF/#000000/' "$DEST/values/ic_launcher_background.xml"
+            echo "Icons generated."
+          else
+            echo "::warning::branding/logo.png not found in repo — keeping original v2rayNG icon for this build. Upload the logo and re-run to fix this."
+          fi
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;29.0.14206865" || \
+          echo "y" | sdkmanager --install "ndk;29.0.14206865"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+
+      - name: Add ndkVersion to build.gradle.kts
+        run: |
+          sed -i '/^android {/a\    ndkVersion = "29.0.14206865"' v2rayNG/V2rayNG/app/build.gradle.kts
+
+      - name: Build libhevtun
+        working-directory: v2rayNG
+        run: bash compile-hevtun.sh
+
+      - name: Copy libhevtun into app
+        run: cp -r v2rayNG/libs v2rayNG/V2rayNG/app/
+
+      - name: Download prebuilt libv2ray.aar
+        run: |
+          cd v2rayNG/AndroidLibXrayLite
+          CURRENT_TAG=$(git describe --tags --abbrev=0)
+          cd ../..
+          mkdir -p v2rayNG/V2rayNG/app/libs
+          curl -L -o v2rayNG/V2rayNG/app/libs/libv2ray.aar \
+            "https://github.com/2dust/AndroidLibXrayLite/releases/download/${CURRENT_TAG}/libv2ray.aar"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Generate gradle wrapper
+        working-directory: v2rayNG/V2rayNG
+        run: gradle wrapper --gradle-version 9.5
+
+      - name: Build APK
+        working-directory: v2rayNG/V2rayNG
+        run: |
+          chmod +x gradlew
+          ./gradlew assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --no-daemon 2>&1 | tail -150
+
+      - name: Upload NexaConfig APK
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NexaConfig-apk
+          path: |
+            v2rayNG/V2rayNG/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
